@@ -2,14 +2,6 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: "AWS::Serverless-2016-10-31"
 Description: Minimum reproducible example demonstrating the problem I'm having
 
-Parameters:
-  pZoneName:
-    Description: Name of the Route53 zone to create records in
-    Type: String
-  pHostedZoneId:
-    Description: Route53 hosted zone ID for the zone in pZoneName
-    Type: String
-
 Globals:
   Function:
     Timeout: 29 # API Gateway max timeout is 30 s
@@ -23,6 +15,10 @@ Outputs:
       Fn::GetAtt:
         - InternalHttpApiExecutionRole
         - Arn
+  ApiId:
+    Description: API ID
+    Value:
+      Ref: InternalHttpApi
 Resources:
   InternalHttpApiExecutionRole:
     Type: "AWS::IAM::Role"
@@ -88,30 +84,11 @@ Resources:
       Environment:
         Variables:
           LOG_LEVEL: debug
-  TlsCertificate:
-    Type: AWS::CertificateManager::Certificate
-    Properties:
-      DomainName:
-        "Fn::Sub": "*.${pZoneName}"
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName:
-            "Fn::Sub": "*.${pZoneName}"
-          HostedZoneId:
-            Ref: pHostedZoneId
   InternalHttpApi:
     Type: "AWS::Serverless::HttpApi"
     Properties:
       FailOnWarnings: true
       StageName: v1
-      Domain:
-        CertificateArn:
-          Ref: TlsCertificate
-        DomainName:
-          "Fn::Sub": aurelia-test-api.${pZoneName}
-        Route53:
-          HostedZoneName:
-            "Fn::Sub": ${pZoneName}.
       DefinitionBody:
         openapi: 3.0.3
         info:

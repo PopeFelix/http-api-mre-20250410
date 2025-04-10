@@ -6,10 +6,6 @@ Minimum reproducible example demonstrating a problem I'm having where I can succ
   
 
 ```
-sam deploy --parameter-overrides 'pZoneName=my-route53-zone.tld,pHostedZoneId=Z1234567890ABCDEF123'
+sam deploy -t template.yaml
 ```
 
-### Parameters
-
-* pHostedZoneId: Route53 hosted zone ID
-* pZoneName: Route53 zone name

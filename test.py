@@ -14,9 +14,10 @@ from requests.exceptions import HTTPError
 load_dotenv()
 
 role_arn = os.getenv('ROLE_ARN')
-host     = 'aurelia-test-api' + '.' + os.getenv('DOMAIN')
-region   = os.getenv('AWS_REGION', os.getenv('AWS_DEFAULT_REGION'))
-
+region   = os.getenv('AWS_REGION')
+api_id   = os.getenv('API_ID')
+host     = f'{api_id}.execute-api.us-east-1.amazonaws.com'
+ 
 sts = boto3.client('sts')
 
 def assume_role_and_get_session(role_arn):
@@ -41,7 +42,7 @@ if not session_credentials:
 
 def send_signed_request(method, path, payload=None):
     service = 'execute-api'
-    url=f'https://{host}{path}'
+    url=f'https://{host}/v1{path}'
     if payload != None:
         data = json.dumps(payload)
     else:
@@ -60,8 +61,10 @@ def send_signed_request(method, path, payload=None):
         response = requests.request(method, url, headers=dict(request.headers), data={}, timeout=5)
         response.raise_for_status()
     except:
+        print(f'!!! {method} {url} FAILED !!!')
         for (header, value) in response.headers.items():
             print(f'{header}: {value}')
+        print(response.text)
         raise
     return json.loads(response.content.decode("utf-8"))
 
@@ -71,4 +74,3 @@ print(f'GET response: {json.dumps(item)}')
 
 response = send_signed_request('POST', '/item', { "id": "test2", "name": "Test Item 2", "description": "Another Test Item"} )
 print(f'POST response: {json.dumps(response)}')
-
