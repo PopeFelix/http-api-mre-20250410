@@ -56,9 +56,10 @@ def send_signed_request(method, path, payload=None):
     )
 
     SigV4Auth(session_credentials, service, region).add_auth(request) # type: ignore
-    
+    request.headers['Content-Type'] = 'application/json' 
+
     try:
-        response = requests.request(method, url, headers=dict(request.headers), data={}, timeout=5)
+        response = requests.request(method, url, headers=dict(request.headers), data=data, timeout=5)
         response.raise_for_status()
     except:
         print(f'!!! {method} {url} FAILED !!!')

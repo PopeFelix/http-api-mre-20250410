@@ -28,6 +28,7 @@ def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    logger.info(f"Got body: {body}")
     try:
         body = json.loads(event["body"])
     except json.JSONDecodeError:
