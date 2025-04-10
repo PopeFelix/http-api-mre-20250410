@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: "AWS::Serverless-2016-10-31"
+Description: Minimum reproducible example demonstrating the problem I'm having
+
+Parameters:
+  pZoneName:
+    Description: Name of the Route53 zone to create records in
+    Type: String
+  pHostedZoneId:
+    Description: Route53 hosted zone ID for the zone in pZoneName
+    Type: String
+
+Globals:
+  Function:
+    Timeout: 29 # API Gateway max timeout is 30 s
+    MemorySize: 768
+    Architectures:
+      - arm64
+Outputs:
+  RoleArn:
+    Description: ARN of the internal API execution role
+    Value: 
+      Fn::GetAtt:
+        - InternalHttpApiExecutionRole
+        - Arn
+Resources:
+  InternalHttpApiExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - eks.amazonaws.com
+              AWS:
+                - Fn::Sub: "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: AllowExecuteInternalApi
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:Invoke
+                Resource:
+                  - Fn::Sub: "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${InternalHttpApi}/*"
+  CreateItemLambda:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      Description: Create items
+      CodeUri: lambda/create_item/main.py
+      Handler: main.lambda_handler
+      Runtime: python3.13
+      Environment:
+        Variables:
+          LOG_LEVEL: debug
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Events:
+        HttpApiEvent:
+          Properties:
+            ApiId:
+              Ref: InternalHttpApi
+            Method: POST
+            Path: /item
+          Type: HttpApi
+  GetItemLambda:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      Description: Retrieves a given item
+      CodeUri: lambda/get_item/main.py
+      Handler: main.lambda_handler
+      Runtime: python3.13
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Events:
+        HttpApiEvent:
+          Properties:
+            ApiId:
+              Ref: InternalHttpApi
+            Method: GET
+            Path: /item/{id}
+          Type: HttpApi
+      Environment:
+        Variables:
+          LOG_LEVEL: debug
+  TlsCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName:
+        "Fn::Sub": "*.${pZoneName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName:
+            "Fn::Sub": "*.${pZoneName}"
+          HostedZoneId:
+            Ref: pHostedZoneId
+  InternalHttpApi:
+    Type: "AWS::Serverless::HttpApi"
+    Properties:
+      FailOnWarnings: true
+      StageName: v1
+      Domain:
+        CertificateArn:
+          Ref: TlsCertificate
+        DomainName:
+          "Fn::Sub": aurelia-test-api.${pZoneName}
+        Route53:
+          HostedZoneName:
+            "Fn::Sub": ${pZoneName}.
+      DefinitionBody:
+        openapi: 3.0.3
+        info:
+          version: 1.0.0
+          title: API Gateway MRE 2025-04-10
+          description: Minimum Reproducible Example demonstrating the trouble I'm having
+        security:
+          - sigv4: []
+        paths:
+          /item/{id}:
+            parameters: # Parameter is shared among all methods
+              - name: id
+                schema:
+                  type: string
+                description: Unique identifier for an item
+                in: path
+                required: true
+            get:
+              summary: Retrieve the item with the given ID
+              operationId: getItemId
+              responses:
+                2XX:
+                  description: Successfully retrieved item
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/item"
+                4XX:
+                  description: Error retrieving item
+              x-amazon-apigateway-integration:
+                $ref: "#/components/x-amazon-apigateway-integrations/getItem"
+          /item:
+            post:
+              summary: create a new item
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/item"
+              operationId: postItem
+              responses:
+                2XX:
+                  description: Succesfully created item
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/create_item_response"
+                4XX:
+                  description: Error creating new item
+              x-amazon-apigateway-integration:
+                $ref: "#/components/x-amazon-apigateway-integrations/createItem"
+        components:
+          securitySchemes:
+            sigv4:
+              type: apiKey
+              name: Authorization
+              in: header
+              x-amazon-apigateway-authtype: awsSigv4
+          schemas:
+            id:
+              type: string
+              description: Unique identifier for a single item
+              example: item-001
+            name:
+              type: string
+              description: Name of an item
+              example: "Item 1"
+            description:
+              type: string
+              description: Item description
+              example: "Thingamajigs and doodads"
+            item:
+              type: object
+              required:
+                - id
+                - name
+                - description
+              properties:
+                id:
+                  $ref: "#/components/schemas/id"
+                name:
+                  $ref: "#/components/schemas/name"
+                description:
+                  $ref: "#/components/schemas/description"
+          x-amazon-apigateway-integrations:
+            createItem:
+              httpMethod: POST
+              type: aws_proxy
+              payloadFormatVersion: "2.0"
+              uri:
+                Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateItemLambda.Arn}/invocations
+            getItem:
+              httpMethod: POST
+              type: aws_proxy
+              payloadFormatVersion: "2.0"
+              uri:
+                Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetItemLambda.Arn}/invocations
+        x-amazon-apigateway-request-validators:
+          all:
+            validateRequestBody: true
+            validateRequestParameters: true
+          params-only:
+            validateRequestBody: false
+            validateRequestParameters: true
+          body-only:
+            validateRequestBody: true
+            validateRequestParameters: false
